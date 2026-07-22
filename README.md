@@ -8,7 +8,6 @@
 
 <img src="https://github.com/user-attachments/assets/a9d5915b-c2c1-4471-8bb5-d8cd68336780" width="50%">
 
-![image]()
 ## ✨ Возможности
 
 - ✅ Переключение ANC / Прозрачность из приложения
