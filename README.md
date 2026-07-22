@@ -49,9 +49,11 @@ bcdedit /set testsigning on
 ## Установка драйвера
 **📦 Драйвер входит в состав архива.
 Зайдите в архив AirPodsControl.zip из Releases, найдите папку Driver внутри архива и установите вручную через Диспетчер устройств (см. ниже).**
+
 <img src="https://github.com/user-attachments/assets/6834cc58-4b49-42af-bf8d-e354ff2ed11a" width="20%">
 
 ## Порядок установки 
+
 <img src="https://github.com/user-attachments/assets/46642469-7b8d-439b-9180-a5ecb3a7fbd4" width="20%">
 <img src="https://github.com/user-attachments/assets/369ea30d-4940-4cce-9534-2d1b98e56747" width="20%">
 <img src="https://github.com/user-attachments/assets/e487c01c-c5cd-4d1e-a2db-b6ab1326444c" width="20%">
