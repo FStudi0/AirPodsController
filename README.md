@@ -64,7 +64,8 @@ bcdedit /set testsigning on
 
 ### Драйвер
 
-'.' [unzoid](https://github.com/unzoid) за разработку драйвера [Airpods-Windows-Control](https://github.com/unzoid/Airpods-Windows-Control)
+. [unzoid](https://github.com/unzoid) за разработку драйвера [Airpods-Windows-Control](https://github.com/unzoid/Airpods-Windows-Control)
 
 ### Протокол и реверс-инжиниринг
-. [AAP-Protocol-Defintion]([https://github.com/unzoid](https://github.com/tyalie/AAP-Protocol-Defintion) - документация протокола Apple Audio Protocol (AAP).
+
+. [AAP-Protocol-Defintion]([https://github.com/unzoid](https://github.com/tyalie/AAP-Protocol-Defintion) - документация протокола Apple Audio Protocol (AAP)
