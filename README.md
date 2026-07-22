@@ -60,6 +60,11 @@ bcdedit /set testsigning on
 
 **Обновить драйвер -> Найти драйверы на этом компьютере -> Выбрать драйвер из списка доступных драйверов на компьютере -> Установить с диска -> Обзор и указывайте путь к папке Driver который находится в архиве. Нажимаете далее и устанавливайте.**
 
-### 🙏 Благодарности
+## 🙏 Благодарности
 
-[unzoid](https://github.com/unzoid) за разработку драйвера [Airpods-Windows-Control](https://github.com/unzoid/Airpods-Windows-Control)
+### Драйвер
+
+. [unzoid](https://github.com/unzoid) за разработку драйвера [Airpods-Windows-Control](https://github.com/unzoid/Airpods-Windows-Control)
+
+### Протокол и реверс-инжиниринг
+. [AAP-Protocol-Defintion]([https://github.com/unzoid](https://github.com/tyalie/AAP-Protocol-Defintion) - документация протокола Apple Audio Protocol (AAP).
