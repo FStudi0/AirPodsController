@@ -68,4 +68,4 @@ bcdedit /set testsigning on
 
 ### Протокол и реверс-инжиниринг
 
-. [AAP-Protocol-Defintion]([https://github.com/unzoid](https://github.com/tyalie/AAP-Protocol-Defintion) - документация протокола Apple Audio Protocol (AAP)
+. [AAP-Protocol-Defintion](https://github.com/unzoid](https://github.com/tyalie/AAP-Protocol-Defintion) - документация протокола Apple Audio Protocol (AAP)
