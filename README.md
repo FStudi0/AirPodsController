@@ -59,3 +59,7 @@ bcdedit /set testsigning on
 <img src="https://github.com/user-attachments/assets/e487c01c-c5cd-4d1e-a2db-b6ab1326444c" width="20%">
 
 **Обновить драйвер -> Найти драйверы на этом компьютере -> Выбрать драйвер из списка доступных драйверов на компьютере -> Установить с диска -> Обзор и указывайте путь к папке Driver который находится в архиве. Нажимаете далее и устанавливайте.**
+
+### 🙏 Благодарности
+
+[unzoid](https://github.com/unzoid) за разработку драйвера [Airpods-Windows-Control](https://github.com/unzoid/Airpods-Windows-Control)
