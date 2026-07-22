@@ -20,10 +20,12 @@
 	  <None Remove="Resources\icon_notifications.png" />
 	  <None Remove="Resources\icon_settings.png" />
 	  <None Remove="Resources\icon_transparency.png" />
+	  <None Remove="Resources\logo.ico" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<Content Include="logo.ico" />
+		<Resource Include="Resources\logo.ico" />
 	</ItemGroup>
 
 	<ItemGroup>

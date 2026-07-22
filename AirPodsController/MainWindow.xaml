@@ -163,10 +163,10 @@
                             <Border Background="#34C759" CornerRadius="14">
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                        </ControlTemplate>
+                        </ControlTemplate>        
                     </Button.Template>
                     <TextBlock Text="Подключиться" FontSize="15" FontWeight="SemiBold" Foreground="White"/>
-                </Button>
+                </Button> 
 
                 <!-- Status -->
                 <TextBlock x:Name="StatusText" Text="Нажмите «Подключиться»" FontSize="13" 
