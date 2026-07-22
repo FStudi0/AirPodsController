@@ -1,4 +1,4 @@
-# <img src="https://github.com/user-attachments/assets/a8f9f3c9-345b-4961-ae6a-9420a9d36965" width="10%"> AirPods Controller
+# <img src="https://github.com/user-attachments/assets/a8f9f3c9-345b-4961-ae6a-9420a9d36965" width="5%"> AirPods Controller
 
 Управление AirPods Pro на Windows с поддержкой переключения режимов ANC / Прозрачность.
 
