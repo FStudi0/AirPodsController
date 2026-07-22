@@ -35,6 +35,6 @@
 
 **Шаг 2:** Включите тестовый режим Windows (CMD от Администратора):
 ```cmd
-bcdedit /set testsigning on
+bcdedit /set testsigning on```
 
 **Шаг 3:** Перезагрузите компьютер
