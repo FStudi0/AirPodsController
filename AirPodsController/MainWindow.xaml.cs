@@ -17,7 +17,7 @@ using System.Windows.Threading;
 
 namespace AirPodsController
 {
-    public enum NoiseMode { ANC, Transparency }
+    public enum NoiseMode { Off, ANC, Transparency, Adaptive }
 
     public partial class MainWindow : Window
     {
@@ -43,20 +43,23 @@ namespace AirPodsController
         // === Tray ===
         private System.Windows.Forms.NotifyIcon? trayIcon;
 
-        // === Auto-connect timer ===
+        // === Timers ===
         private DispatcherTimer? _autoConnectTimer;
+        private DispatcherTimer? _batteryTimer;
         private bool _isConnecting = false;
-        private bool _isBusy = false;
+        private bool _isModeBusy = false;
 
         // === Sequence counter for AP2 (instance, resets on reconnect) ===
         private byte _sequenceCounter = 0;
 
-        // === Constants ===
+        // === Constants (exact from driver) ===
         private static readonly Guid AirPodsGuid = new("fc71b33d-d528-4763-a86c-78777c7bcd7b");
+        // init connection: { 00,00,04,00,01,00,02,00,00,00,00,00,00,00,00,00 }
         private static readonly byte[] InitCmd = { 0x00, 0x00, 0x04, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+        // request battery status: { 04, 00, 04, 00, 0x0F, 00, 0xFF, 0xFF, 0xFF, 0xFF }
         private static readonly byte[] BatteryCmd = { 0x04, 0x00, 0x04, 0x00, 0x0F, 0x00, 0xFF, 0xFF, 0xFF, 0xFF };
+        // request set mode: { 04, 00, 04, 00, 0x9, 00, 0xD, mode, 00, 00, 00 }
         private static readonly byte[] ModeCmdBase = { 0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0D, 0xFF, 0x00, 0x00, 0x00 };
-        private static readonly byte[] StatusCmd = { 0x04, 0x00, 0x04, 0x00, 0x09, 0x00, 0x0C, 0x01, 0x00, 0x00, 0x00 };
         private static readonly IntPtr INVALID_HANDLE_VALUE = new(-1);
 
         // === WinAPI ===
@@ -95,6 +98,7 @@ namespace AirPodsController
             LoadImages();
             InitTray();
             InitAutoConnectTimer();
+            InitBatteryTimer();
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -112,7 +116,7 @@ namespace AirPodsController
             TryAutoConnect();
         }
 
-        // ==================== AUTO CONNECT TIMER (FIXED) ====================
+        // ==================== TIMERS ====================
 
         private void InitAutoConnectTimer()
         {
@@ -124,17 +128,38 @@ namespace AirPodsController
             _autoConnectTimer.Start();
         }
 
+        private void InitBatteryTimer()
+        {
+            _batteryTimer = new DispatcherTimer();
+            UpdateBatteryTimerInterval();
+            _batteryTimer.Tick += async (s, e) =>
+            {
+                if (hDevice != INVALID_HANDLE_VALUE && !deviceDisconnected)
+                {
+                    await Task.Run(() => CheckBatteryInternal());
+                }
+            };
+            _batteryTimer.Start();
+        }
+
+        private void UpdateBatteryTimerInterval()
+        {
+            int seconds = config?.CheckInterval ?? 30;
+            if (seconds < 10) seconds = 10;
+            if (_batteryTimer != null)
+                _batteryTimer.Interval = TimeSpan.FromSeconds(seconds);
+        }
+
+        // ==================== AUTO CONNECT ====================
+
         private void TryAutoConnect()
         {
-            if (_isConnecting || _isBusy) return;
+            if (_isConnecting || _isModeBusy) return;
 
-            // Если уже подключены — просто проверим, есть ли устройство в системе
-            // НЕ шлём команды, чтобы не мешать пользовательским действиям
             if (hDevice != INVALID_HANDLE_VALUE && !deviceDisconnected)
             {
                 if (!IsDeviceAvailable())
                 {
-                    // Устройство пропало из системы
                     lock (usbLock)
                     {
                         if (hDevice != INVALID_HANDLE_VALUE)
@@ -144,12 +169,15 @@ namespace AirPodsController
                         }
                     }
                     deviceDisconnected = true;
-                    Dispatcher.Invoke(() => StatusText.Text = "Устройство отключено");
+                    Dispatcher.Invoke(() =>
+                    {
+                        StatusText.Text = "Устройство отключено";
+                        ResetBatteryDisplay();
+                    });
                 }
                 return;
             }
 
-            // Если не подключены — проверим, есть ли устройство в системе
             if (!IsDeviceAvailable()) return;
 
             _isConnecting = true;
@@ -171,9 +199,14 @@ namespace AirPodsController
                     if (hDevice == INVALID_HANDLE_VALUE) return;
 
                     deviceDisconnected = false;
-                    _sequenceCounter = 0; // Сбрасываем sequence при новом коннекте!
+                    _sequenceCounter = 0;
 
+                    // Send init command (exact from driver)
                     WriteFile(hDevice, InitCmd, (uint)InitCmd.Length, out uint _, IntPtr.Zero);
+
+                    // Small delay to let device initialize
+                    Thread.Sleep(100);
+
                     string name = GetRealDeviceName();
 
                     Dispatcher.Invoke(() =>
@@ -238,14 +271,22 @@ namespace AirPodsController
                 bitmap.UriSource = new Uri(filePath);
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
                 bitmap.EndInit();
-                bitmap.Freeze();
                 imageControl.Source = bitmap;
             }
         }
 
         private void UpdateModeIcons()
         {
-            double targetX = currentNoiseMode == NoiseMode.ANC ? 0 : AncButton.ActualWidth + 6;
+            double targetX = 0;
+            if (currentNoiseMode == NoiseMode.Off)
+                targetX = 0;
+            else if (currentNoiseMode == NoiseMode.ANC)
+                targetX = OffButton.ActualWidth + 6;
+            else if (currentNoiseMode == NoiseMode.Transparency)
+                targetX = OffButton.ActualWidth + AncButton.ActualWidth + 12;
+            else
+                targetX = OffButton.ActualWidth + AncButton.ActualWidth + TransButton.ActualWidth + 18;
+
             var animation = new DoubleAnimation
             {
                 From = HighlightTransform.X,
@@ -254,9 +295,20 @@ namespace AirPodsController
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
             };
             HighlightTransform.BeginAnimation(TranslateTransform.XProperty, animation);
+
+            OffText.Foreground = currentNoiseMode == NoiseMode.Off ? Brushes.White : new SolidColorBrush(Color.FromRgb(28, 28, 30));
             AncText.Foreground = currentNoiseMode == NoiseMode.ANC ? Brushes.White : new SolidColorBrush(Color.FromRgb(28, 28, 30));
             TransText.Foreground = currentNoiseMode == NoiseMode.Transparency ? Brushes.White : new SolidColorBrush(Color.FromRgb(28, 28, 30));
-            lastKnownMode = currentNoiseMode == NoiseMode.ANC ? 2 : 3;
+            AdaptiveText.Foreground = currentNoiseMode == NoiseMode.Adaptive ? Brushes.White : new SolidColorBrush(Color.FromRgb(28, 28, 30));
+
+            lastKnownMode = currentNoiseMode switch
+            {
+                NoiseMode.Off => 1,
+                NoiseMode.ANC => 2,
+                NoiseMode.Transparency => 3,
+                NoiseMode.Adaptive => 4,
+                _ => 1
+            };
         }
 
         // ==================== TRAY ====================
@@ -285,6 +337,30 @@ namespace AirPodsController
             menu.Items.Add(openItem);
             menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
 
+            var offItem = new System.Windows.Forms.ToolStripMenuItem("Выкл (Normal)");
+            offItem.Click += (s, e) => Dispatcher.Invoke(() => Off_Click(this, new RoutedEventArgs()));
+            menu.Items.Add(offItem);
+
+            var ancItem = new System.Windows.Forms.ToolStripMenuItem("ANC");
+            ancItem.Click += (s, e) => Dispatcher.Invoke(() => ANC_Click(this, new RoutedEventArgs()));
+            menu.Items.Add(ancItem);
+
+            var transItem = new System.Windows.Forms.ToolStripMenuItem("Прозрачность");
+            transItem.Click += (s, e) => Dispatcher.Invoke(() => Transparency_Click(this, new RoutedEventArgs()));
+            menu.Items.Add(transItem);
+
+            var adaptiveItem = new System.Windows.Forms.ToolStripMenuItem("Адаптивное аудио");
+            adaptiveItem.Click += (s, e) => Dispatcher.Invoke(() => Adaptive_Click(this, new RoutedEventArgs()));
+            menu.Items.Add(adaptiveItem);
+
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
+            var batItem = new System.Windows.Forms.ToolStripMenuItem("Проверить заряд");
+            batItem.Click += (s, e) => Dispatcher.Invoke(() => CheckBattery_Click(this, new RoutedEventArgs()));
+            menu.Items.Add(batItem);
+
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+
             var settingsItem = new System.Windows.Forms.ToolStripMenuItem("Настройки");
             settingsItem.Click += (s, e) => Settings_Click(this, new RoutedEventArgs());
             menu.Items.Add(settingsItem);
@@ -298,9 +374,15 @@ namespace AirPodsController
             trayIcon.DoubleClick += (s, e) => { this.Show(); this.Activate(); };
         }
 
+        private void ShowNotification(string title, string message)
+        {
+            trayIcon?.ShowBalloonTip(3000, title, message, System.Windows.Forms.ToolTipIcon.Info);
+        }
+
         private void ShutdownApp()
         {
             _autoConnectTimer?.Stop();
+            _batteryTimer?.Stop();
             UnregisterAllHotkeys();
             trayIcon?.Dispose();
             lock (usbLock)
@@ -314,8 +396,12 @@ namespace AirPodsController
             Application.Current.Shutdown();
         }
 
-        // ==================== USB COMMANDS (FIXED) ====================
+        // ==================== USB COMMANDS ====================
 
+        /// <summary>
+        /// Reads and discards any pending data in the buffer.
+        /// Exact from driver logic.
+        /// </summary>
         private void DrainBuffer()
         {
             if (hDevice == INVALID_HANDLE_VALUE) return;
@@ -328,56 +414,41 @@ namespace AirPodsController
             }
         }
 
-        private byte[]? SendCommand(byte[] cmd, int expectedOpcode, int minBytes, int timeoutMs = 1500)
+        /// <summary>
+        /// Sends command and reads response. Exact logic from driver demo.
+        /// </summary>
+        private byte[]? SendCommandReadResponse(byte[] cmd, int expectedLen, int timeoutMs = 1000)
         {
             if (hDevice == INVALID_HANDLE_VALUE || deviceDisconnected) return null;
 
-            DrainBuffer();
             WriteFile(hDevice, cmd, (uint)cmd.Length, out uint _, IntPtr.Zero);
 
-            byte[]? result = null;
-            bool completed = false;
-            IntPtr currentHandle = hDevice;
-
-            var readTask = Task.Run(() =>
+            byte[] buf = new byte[512];
+            int elapsed = 0;
+            while (elapsed < timeoutMs)
             {
-                byte[] buf = new byte[512];
-                int elapsed = 0;
-                while (elapsed < timeoutMs)
+                bool ok = ReadFile(hDevice, buf, 512, out uint bytesRead, IntPtr.Zero);
+                if (!ok) return null;
+                if (bytesRead == expectedLen)
                 {
-                    bool ok = ReadFile(currentHandle, buf, 512, out uint bytesRead, IntPtr.Zero);
-                    if (!ok) return;
-                    if (bytesRead >= (uint)minBytes && buf[0] == 0x04 && buf[4] == (byte)expectedOpcode)
-                    {
-                        result = new byte[bytesRead];
-                        Array.Copy(buf, result, bytesRead);
-                        completed = true;
-                        return;
-                    }
+                    byte[] result = new byte[bytesRead];
+                    Array.Copy(buf, result, bytesRead);
+                    return result;
+                }
+                if (bytesRead > 0)
+                {
+                    // Got some data but wrong length, continue reading
                     Thread.Sleep(20);
                     elapsed += 20;
+                    continue;
                 }
-            });
-
-            if (!readTask.Wait(timeoutMs + 500))
-            {
-                Debug.WriteLine("SendCommand TIMEOUT! Marking disconnected...");
-                lock (usbLock)
-                {
-                    if (hDevice == currentHandle)
-                    {
-                        CloseHandle(hDevice);
-                        hDevice = INVALID_HANDLE_VALUE;
-                        deviceDisconnected = true;
-                    }
-                }
-                return null;
+                Thread.Sleep(20);
+                elapsed += 20;
             }
-
-            return completed ? result : null;
+            return null;
         }
 
-        // ==================== BUTTON HANDLERS (FIXED) ====================
+        // ==================== BUTTON HANDLERS ====================
 
         private async void Connect_Click(object sender, RoutedEventArgs e)
         {
@@ -387,20 +458,10 @@ namespace AirPodsController
                 {
                     if (hDevice != INVALID_HANDLE_VALUE)
                     {
-                        byte[]? response = SendCommand(StatusCmd, 0x09, 11, 500);
-                        if (response != null)
-                        {
-                            Dispatcher.Invoke(() => StatusText.Text = "Уже подключено");
-                            deviceDisconnected = false;
-                            return;
-                        }
-                        else
-                        {
-                            CloseHandle(hDevice);
-                            hDevice = INVALID_HANDLE_VALUE;
-                            deviceDisconnected = true;
-                            Dispatcher.Invoke(() => StatusText.Text = "Переподключение...");
-                        }
+                        // Already connected, just update UI
+                        Dispatcher.Invoke(() => StatusText.Text = "Уже подключено");
+                        deviceDisconnected = false;
+                        return;
                     }
 
                     uint size = 0;
@@ -431,8 +492,9 @@ namespace AirPodsController
                     }
 
                     deviceDisconnected = false;
-                    _sequenceCounter = 0; // Сброс sequence!
+                    _sequenceCounter = 0;
 
+                    // Send init command
                     WriteFile(hDevice, InitCmd, (uint)InitCmd.Length, out uint _, IntPtr.Zero);
                     string name = GetRealDeviceName();
 
@@ -447,7 +509,6 @@ namespace AirPodsController
             });
         }
 
-        // === FIX: ANC — без DrainBuffer перед командой, с защитой _isBusy ===
         private async void ANC_Click(object sender, RoutedEventArgs e)
         {
             if (hDevice == INVALID_HANDLE_VALUE || deviceDisconnected)
@@ -465,22 +526,26 @@ namespace AirPodsController
                 {
                     if (hDevice == INVALID_HANDLE_VALUE) return;
 
-                    _isBusy = true;
+                    _isModeBusy = true;
                     try
                     {
-                        // НЕ делаем DrainBuffer здесь — он сбивает ответы таймера!
-                        // Просто шлём Init и ждём чуть-чуть
-                        WriteFile(hDevice, InitCmd, (uint)InitCmd.Length, out _, IntPtr.Zero);
+                        // Send Init first (required before mode change)
+                        WriteFile(hDevice, InitCmd, (uint)InitCmd.Length, out uint initWritten, IntPtr.Zero);
+                        if (initWritten == 0)
+                        {
+                            Debug.WriteLine("[ANC] InitCmd failed — device not ready");
+                            Dispatcher.Invoke(() => StatusText.Text = "Устройство не готово");
+                            return;
+                        }
                         Thread.Sleep(80);
 
                         byte[] cmd = (byte[])ModeCmdBase.Clone();
-                        cmd[7] = 2; // ANC
+                        cmd[7] = 2; // ANC ON
                         cmd[8] = _sequenceCounter++;
 
                         Debug.WriteLine($"[ANC] Sending: {BitConverter.ToString(cmd)}");
-
                         bool ok = WriteFile(hDevice, cmd, (uint)cmd.Length, out uint written, IntPtr.Zero);
-                        Debug.WriteLine($"[ANC] WriteFile: {ok}, bytes: {written}");
+                        Debug.WriteLine($"[ANC] WriteFile result: {ok}, Written: {written} bytes");
 
                         Thread.Sleep(150);
 
@@ -492,13 +557,12 @@ namespace AirPodsController
                     }
                     finally
                     {
-                        _isBusy = false;
+                        _isModeBusy = false;
                     }
                 }
             });
         }
 
-        // === FIX: Transparency — без DrainBuffer перед командой ===
         private async void Transparency_Click(object sender, RoutedEventArgs e)
         {
             if (hDevice == INVALID_HANDLE_VALUE || deviceDisconnected)
@@ -516,10 +580,16 @@ namespace AirPodsController
                 {
                     if (hDevice == INVALID_HANDLE_VALUE) return;
 
-                    _isBusy = true;
+                    _isModeBusy = true;
                     try
                     {
-                        WriteFile(hDevice, InitCmd, (uint)InitCmd.Length, out _, IntPtr.Zero);
+                        WriteFile(hDevice, InitCmd, (uint)InitCmd.Length, out uint initWritten, IntPtr.Zero);
+                        if (initWritten == 0)
+                        {
+                            Debug.WriteLine("[TRANS] InitCmd failed — device not ready");
+                            Dispatcher.Invoke(() => StatusText.Text = "Устройство не готово");
+                            return;
+                        }
                         Thread.Sleep(80);
 
                         byte[] cmd = (byte[])ModeCmdBase.Clone();
@@ -527,9 +597,8 @@ namespace AirPodsController
                         cmd[8] = _sequenceCounter++;
 
                         Debug.WriteLine($"[TRANS] Sending: {BitConverter.ToString(cmd)}");
-
                         bool ok = WriteFile(hDevice, cmd, (uint)cmd.Length, out uint written, IntPtr.Zero);
-                        Debug.WriteLine($"[TRANS] WriteFile: {ok}, bytes: {written}");
+                        Debug.WriteLine($"[TRANS] WriteFile result: {ok}, Written: {written} bytes");
 
                         Thread.Sleep(150);
 
@@ -541,16 +610,22 @@ namespace AirPodsController
                     }
                     finally
                     {
-                        _isBusy = false;
+                        _isModeBusy = false;
                     }
                 }
             });
         }
 
-        // === FIX: CheckBattery с защитой _isBusy ===
-        private async void CheckBattery_Click(object sender, RoutedEventArgs e)
+        private async void Adaptive_Click(object sender, RoutedEventArgs e)
         {
-            if (_isBusy) return;
+            if (hDevice == INVALID_HANDLE_VALUE || deviceDisconnected)
+            {
+                StatusText.Text = "Сначала подключите AirPods";
+                return;
+            }
+
+            currentNoiseMode = NoiseMode.Adaptive;
+            UpdateModeIcons();
 
             await Task.Run(() =>
             {
@@ -558,67 +633,228 @@ namespace AirPodsController
                 {
                     if (hDevice == INVALID_HANDLE_VALUE) return;
 
-                    _isBusy = true;
+                    _isModeBusy = true;
                     try
                     {
-                        byte[]? r = SendCommand(BatteryCmd, 0x0F, 22, 2000);
-                        if (r == null || r.Length < 22) return;
+                        WriteFile(hDevice, InitCmd, (uint)InitCmd.Length, out uint initWritten, IntPtr.Zero);
+                        if (initWritten == 0)
+                        {
+                            Debug.WriteLine("[ADAPTIVE] InitCmd failed — device not ready");
+                            Dispatcher.Invoke(() => StatusText.Text = "Устройство не готово");
+                            return;
+                        }
+                        Thread.Sleep(80);
 
-                        int left = r[9], right = r[14], caseBat = r[19];
-                        if (left > 100 || right > 100 || caseBat > 100) return;
+                        byte[] cmd = (byte[])ModeCmdBase.Clone();
+                        cmd[7] = 4; // Adaptive Audio
+                        cmd[8] = _sequenceCounter++;
+
+                        Debug.WriteLine($"[ADAPTIVE] Sending: {BitConverter.ToString(cmd)}");
+                        bool ok = WriteFile(hDevice, cmd, (uint)cmd.Length, out uint written, IntPtr.Zero);
+                        Debug.WriteLine($"[ADAPTIVE] WriteFile result: {ok}, Written: {written} bytes");
+
+                        Thread.Sleep(150);
 
                         Dispatcher.Invoke(() =>
                         {
-                            LeftBatteryText.Text = left + "%";
-                            RightBatteryText.Text = right + "%";
-                            CaseBatteryText.Text = caseBat + "%";
-                            LeftBatteryText.Foreground = Brushes.ForestGreen;
-                            RightBatteryText.Foreground = Brushes.ForestGreen;
-                            CaseBatteryText.Foreground = Brushes.ForestGreen;
-                            StatusText.Text = "Заряд обновлён";
+                            StatusText.Text = "Адаптивное аудио";
+                            if (config?.NotifyModeChange == true) ShowNotification("Режим", "Адаптивное аудио");
                         });
-
-                        if (config != null && config.NotifyLowBattery && !lowBatteryWarningShown)
-                        {
-                            int minBat = Math.Min(left, Math.Min(right, caseBat));
-                            if (minBat <= config.LowBatteryThreshold)
-                            {
-                                ShowNotification("Низкий заряд", $"Л:{left}% П:{right}% Кейс:{caseBat}%");
-                                lowBatteryWarningShown = true;
-                            }
-                        }
-                        if (caseBat > lastKnownCaseBattery && lastKnownCaseBattery != -1)
-                            lowBatteryWarningShown = false;
-                        lastKnownCaseBattery = caseBat;
-
-                        if (config != null)
-                        {
-                            config.BatteryHistory ??= new List<BatteryHistory>();
-                            config.BatteryHistory.Add(new BatteryHistory
-                            {
-                                Timestamp = DateTime.Now,
-                                Left = left,
-                                Right = right,
-                                Case = caseBat
-                            });
-                            if (config.BatteryHistory.Count > 100)
-                                config.BatteryHistory.RemoveRange(0, config.BatteryHistory.Count - 100);
-                        }
                     }
                     finally
                     {
-                        _isBusy = false;
+                        _isModeBusy = false;
                     }
                 }
             });
         }
 
-        // ==================== HELPERS ====================
-
-        private void ShowNotification(string title, string message)
+        private async void Off_Click(object sender, RoutedEventArgs e)
         {
-            trayIcon?.ShowBalloonTip(3000, title, message, System.Windows.Forms.ToolTipIcon.Info);
+            if (hDevice == INVALID_HANDLE_VALUE || deviceDisconnected)
+            {
+                StatusText.Text = "Сначала подключите AirPods";
+                return;
+            }
+
+            currentNoiseMode = NoiseMode.Off;
+            UpdateModeIcons();
+
+            await Task.Run(() =>
+            {
+                lock (usbLock)
+                {
+                    if (hDevice == INVALID_HANDLE_VALUE) return;
+
+                    _isModeBusy = true;
+                    try
+                    {
+                        WriteFile(hDevice, InitCmd, (uint)InitCmd.Length, out uint initWritten, IntPtr.Zero);
+                        if (initWritten == 0)
+                        {
+                            Debug.WriteLine("[OFF] InitCmd failed — device not ready");
+                            Dispatcher.Invoke(() => StatusText.Text = "Устройство не готово");
+                            return;
+                        }
+                        Thread.Sleep(80);
+
+                        byte[] cmd = (byte[])ModeCmdBase.Clone();
+                        cmd[7] = 1; // OFF / Normal mode (ANC OFF)
+                        cmd[8] = _sequenceCounter++;
+
+                        Debug.WriteLine($"[OFF] Sending: {BitConverter.ToString(cmd)}");
+                        bool ok = WriteFile(hDevice, cmd, (uint)cmd.Length, out uint written, IntPtr.Zero);
+                        Debug.WriteLine($"[OFF] WriteFile result: {ok}, Written: {written} bytes");
+
+                        Thread.Sleep(150);
+
+                        Dispatcher.Invoke(() =>
+                        {
+                            StatusText.Text = "Режим выкл (Normal)";
+                            if (config?.NotifyModeChange == true) ShowNotification("Режим", "Выключено");
+                        });
+                    }
+                    finally
+                    {
+                        _isModeBusy = false;
+                    }
+                }
+            });
         }
+
+        // ==================== BATTERY (EXACT FROM DRIVER) ====================
+
+        /// <summary>
+        /// UI entry point for battery check button.
+        /// </summary>
+        private async void CheckBattery_Click(object sender, RoutedEventArgs e)
+        {
+            await Task.Run(() => CheckBatteryInternal());
+        }
+
+        /// <summary>
+        /// Exact battery parsing from driver demo (main.cpp):
+        /// if (cbRead == 22) {
+        ///     printf("L : %d , R : %d, Case : %d\n", recvBuffer[9], recvBuffer[14], recvBuffer[19]);
+        ///     printf("Left unit in case : %s\n", recvBuffer[10] == 0x1 ? "true" : "false");
+        ///     printf("Right unit in case : %s\n", recvBuffer[15] == 0x1 ? "true" : "false");
+        /// }
+        /// </summary>
+        private void CheckBatteryInternal()
+        {
+            if (hDevice == INVALID_HANDLE_VALUE) return;
+
+            try
+            {
+                lock (usbLock)
+                {
+                    if (hDevice == INVALID_HANDLE_VALUE) return;
+
+                    // Send battery request (exact from driver)
+                    byte[]? response = SendCommandReadResponse(BatteryCmd, expectedLen: 22, timeoutMs: 1500);
+
+                    if (response == null)
+                    {
+                        Dispatcher.Invoke(() => StatusText.Text = "Нет ответа от наушников");
+                        return;
+                    }
+
+                    // Log for debugging
+                    Debug.WriteLine($"[BATTERY] Response length: {response.Length}");
+                    Debug.WriteLine($"[BATTERY] Bytes: {BitConverter.ToString(response)}");
+
+                    // Exact parsing from driver
+                    int leftBattery = response[9];
+                    int leftInCase = response[10];
+                    int rightBattery = response[14];
+                    int rightInCase = response[15];
+                    int caseBattery = response[19];
+
+                    Debug.WriteLine($"[BATTERY] L={leftBattery} (inCase={leftInCase}), R={rightBattery} (inCase={rightInCase}), Case={caseBattery}");
+
+                    // Validate values
+                    if (leftBattery > 100 || rightBattery > 100 || caseBattery > 100)
+                    {
+                        Dispatcher.Invoke(() => StatusText.Text = "Некорректные данные заряда");
+                        return;
+                    }
+
+                    // Build display strings
+                    string leftStr = leftBattery + "%";
+                    string rightStr = rightBattery + "%";
+                    string caseStr = caseBattery + "%";
+
+                    // Determine colors: gray if in case, otherwise by level
+                    Brush leftBrush = leftInCase == 0x1 ? Brushes.Gray : GetBatteryBrush(leftBattery);
+                    Brush rightBrush = rightInCase == 0x1 ? Brushes.Gray : GetBatteryBrush(rightBattery);
+                    Brush caseBrush = GetBatteryBrush(caseBattery);
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        LeftBatteryText.Text = leftStr;
+                        RightBatteryText.Text = rightStr;
+                        CaseBatteryText.Text = caseStr;
+                        LeftBatteryText.Foreground = leftBrush;
+                        RightBatteryText.Foreground = rightBrush;
+                        CaseBatteryText.Foreground = caseBrush;
+                        StatusText.Text = "Заряд обновлён";
+                    });
+
+                    // Low battery notification
+                    int minBat = Math.Min(leftBattery, Math.Min(rightBattery, caseBattery));
+                    if (config != null && config.NotifyLowBattery && !lowBatteryWarningShown)
+                    {
+                        if (minBat <= config.LowBatteryThreshold)
+                        {
+                            ShowNotification("Низкий заряд", $"Л:{leftStr} П:{rightStr} Кейс:{caseStr}");
+                            lowBatteryWarningShown = true;
+                        }
+                    }
+                    if (caseBattery > lastKnownCaseBattery && lastKnownCaseBattery != -1)
+                        lowBatteryWarningShown = false;
+                    lastKnownCaseBattery = caseBattery;
+
+                    // Save to history
+                    if (config != null)
+                    {
+                        config.BatteryHistory ??= new List<BatteryHistory>();
+                        config.BatteryHistory.Add(new BatteryHistory
+                        {
+                            Timestamp = DateTime.Now,
+                            Left = leftBattery,
+                            Right = rightBattery,
+                            Case = caseBattery
+                        });
+                        if (config.BatteryHistory.Count > 100)
+                            config.BatteryHistory.RemoveRange(0, config.BatteryHistory.Count - 100);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[BATTERY] ERROR: {ex.Message}");
+                Dispatcher.Invoke(() => StatusText.Text = "Ошибка получения заряда");
+            }
+        }
+
+        private Brush GetBatteryBrush(int level)
+        {
+            if (level <= 20) return Brushes.Crimson;
+            if (level <= 40) return Brushes.Orange;
+            return Brushes.ForestGreen;
+        }
+
+        private void ResetBatteryDisplay()
+        {
+            LeftBatteryText.Text = "--%";
+            RightBatteryText.Text = "--%";
+            CaseBatteryText.Text = "--%";
+            LeftBatteryText.Foreground = Brushes.Gray;
+            RightBatteryText.Foreground = Brushes.Gray;
+            CaseBatteryText.Foreground = Brushes.Gray;
+        }
+
+        // ==================== CONFIG ====================
 
         private void LoadConfig()
         {
@@ -655,6 +891,7 @@ namespace AirPodsController
             {
                 LoadConfig();
                 RegisterAllHotkeys();
+                UpdateBatteryTimerInterval();
             }
         }
 
@@ -662,7 +899,7 @@ namespace AirPodsController
 
         private void About_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("AirPods Controller\n\nВерсия: 2.1 (WPF)\nУправление AirPods Pro на Windows\n\nFStudio ©2026", "О программе", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("AirPods Controller\n\nВерсия: 2.2 (WPF)\nУправление AirPods Pro на Windows\n\nFStudio ©2026", "О программе", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
         // ==================== HOTKEYS ====================
@@ -685,11 +922,17 @@ namespace AirPodsController
             hotkeyActions.Clear();
             nextHotkeyId = 100;
 
+            if (!string.IsNullOrWhiteSpace(config.OffHotkey))
+                RegHotkey(hWnd, config.OffHotkey, config.OffCtrl, config.OffAlt, config.OffShift, "Off");
+
             if (!string.IsNullOrWhiteSpace(config.ANCHotkey))
                 RegHotkey(hWnd, config.ANCHotkey, config.ANCCtrl, config.ANCAlt, config.ANCShift, "ANC");
 
             if (!string.IsNullOrWhiteSpace(config.TransparencyHotkey))
                 RegHotkey(hWnd, config.TransparencyHotkey, config.TransCtrl, config.TransAlt, config.TransShift, "Trans");
+
+            if (!string.IsNullOrWhiteSpace(config.AdaptiveHotkey))
+                RegHotkey(hWnd, config.AdaptiveHotkey, config.AdaptiveCtrl, config.AdaptiveAlt, config.AdaptiveShift, "Adaptive");
 
             if (!string.IsNullOrWhiteSpace(config.BatteryHotkey))
                 RegHotkey(hWnd, config.BatteryHotkey, config.BatCtrl, config.BatAlt, config.BatShift, "Bat");
@@ -750,8 +993,10 @@ namespace AirPodsController
                 int id = wParam.ToInt32();
                 if (hotkeyActions.TryGetValue(id, out string? action))
                 {
-                    if (action == "ANC") Dispatcher.Invoke(() => ANC_Click(this, new RoutedEventArgs()));
+                    if (action == "Off") Dispatcher.Invoke(() => Off_Click(this, new RoutedEventArgs()));
+                    else if (action == "ANC") Dispatcher.Invoke(() => ANC_Click(this, new RoutedEventArgs()));
                     else if (action == "Trans") Dispatcher.Invoke(() => Transparency_Click(this, new RoutedEventArgs()));
+                    else if (action == "Adaptive") Dispatcher.Invoke(() => Adaptive_Click(this, new RoutedEventArgs()));
                     else if (action == "Bat") Dispatcher.Invoke(() => CheckBattery_Click(this, new RoutedEventArgs()));
                 }
                 handled = true;
@@ -784,15 +1029,23 @@ namespace AirPodsController
         public int LowBatteryThreshold { get; set; } = 20;
         public int CheckInterval { get; set; } = 30;
         public bool SoundNotification { get; set; } = false;
+        public string OffHotkey { get; set; } = "";
         public string ANCHotkey { get; set; } = "";
         public string TransparencyHotkey { get; set; } = "";
+        public string AdaptiveHotkey { get; set; } = "";
         public string BatteryHotkey { get; set; } = "";
+        public bool OffCtrl { get; set; } = false;
+        public bool OffAlt { get; set; } = false;
+        public bool OffShift { get; set; } = false;
         public bool ANCCtrl { get; set; } = false;
         public bool ANCAlt { get; set; } = false;
         public bool ANCShift { get; set; } = false;
         public bool TransCtrl { get; set; } = false;
         public bool TransAlt { get; set; } = false;
         public bool TransShift { get; set; } = false;
+        public bool AdaptiveCtrl { get; set; } = false;
+        public bool AdaptiveAlt { get; set; } = false;
+        public bool AdaptiveShift { get; set; } = false;
         public bool BatCtrl { get; set; } = false;
         public bool BatAlt { get; set; } = false;
         public bool BatShift { get; set; } = false;

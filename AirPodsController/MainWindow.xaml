@@ -2,8 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="AirPods Controller" 
-        Height="780" 
-        Width="380"
+        Height="820" 
+        Width="460"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
         Background="#F2F2F7"
@@ -83,6 +83,8 @@
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
 
                         <!-- Анимированный синий фон -->
@@ -96,21 +98,39 @@
                             </Border.RenderTransform>
                         </Border>
 
-                        <Button Grid.Column="0" x:Name="AncButton" Height="56" Margin="3" 
-                                Click="ANC_Click" Background="Transparent" BorderThickness="0">
+                        <Button Grid.Column="0" x:Name="OffButton" Height="56" Margin="3" 
+                                Click="Off_Click" Background="Transparent" BorderThickness="0">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                <Image Source="pack://application:,,,/Resources/icon_anc.png" Width="30" Height="30" Stretch="Uniform"/>
-                                <TextBlock x:Name="AncText" Text="ANC" FontSize="12" FontWeight="SemiBold" 
-                                           Margin="0,4,0,0" Foreground="White"/>
+                                <Image Source="pack://application:,,,/Resources/icon_off.png" Width="24" Height="24" Stretch="Uniform"/>
+                                <TextBlock x:Name="OffText" Text="Выкл" FontSize="11" FontWeight="SemiBold" 
+                        Margin="0,3,0,0" Foreground="White"/>
                             </StackPanel>
                         </Button>
 
-                        <Button Grid.Column="1" x:Name="TransButton" Height="56" Margin="3" 
+                        <Button Grid.Column="1" x:Name="AncButton" Height="56" Margin="3" 
+                                Click="ANC_Click" Background="Transparent" BorderThickness="0">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Image Source="pack://application:,,,/Resources/icon_anc.png" Width="24" Height="24" Stretch="Uniform"/>
+                                <TextBlock x:Name="AncText" Text="ANC" FontSize="11" FontWeight="SemiBold" 
+                                           Margin="0,3,0,0" Foreground="#1C1C1E"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Grid.Column="2" x:Name="TransButton" Height="56" Margin="3" 
                                 Click="Transparency_Click" Background="Transparent" BorderThickness="0">
                             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                <Image Source="pack://application:,,,/Resources/icon_transparency.png" Width="30" Height="30" Stretch="Uniform"/>
-                                <TextBlock x:Name="TransText" Text="Прозрачность" FontSize="12" FontWeight="SemiBold" 
-                                           Margin="0,4,0,0" Foreground="#1C1C1E"/>
+                                <Image Source="pack://application:,,,/Resources/icon_transparency.png" Width="24" Height="24" Stretch="Uniform"/>
+                                <TextBlock x:Name="TransText" Text="Прозрачность" FontSize="11" FontWeight="SemiBold" 
+                                           Margin="0,3,0,0" Foreground="#1C1C1E"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Grid.Column="3" x:Name="AdaptiveButton" Height="56" Margin="3" 
+                                Click="Adaptive_Click" Background="Transparent" BorderThickness="0">
+                            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Image Source="pack://application:,,,/Resources/icon_adaptive.png" Width="24" Height="24" Stretch="Uniform" Opacity="0.6"/>
+                                <TextBlock x:Name="AdaptiveText" Text="Адаптивное" FontSize="11" FontWeight="SemiBold" 
+                                           Margin="0,3,0,0" Foreground="#1C1C1E"/>
                             </StackPanel>
                         </Button>
                     </Grid>
@@ -138,9 +158,9 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 <TextBlock x:Name="LeftBatteryText" Text="--%" FontSize="18" FontWeight="Bold" 
-                                           Foreground="#34C759" Grid.Column="0" HorizontalAlignment="Center"/>
+                                           Foreground="#8E8E93" Grid.Column="0" HorizontalAlignment="Center"/>
                                 <TextBlock x:Name="RightBatteryText" Text="--%" FontSize="18" FontWeight="Bold" 
-                                           Foreground="#34C759" Grid.Column="1" HorizontalAlignment="Center"/>
+                                           Foreground="#8E8E93" Grid.Column="1" HorizontalAlignment="Center"/>
                             </Grid>
                             <TextBlock Text="Л / П" FontSize="11" Foreground="#8E8E93" 
                                        HorizontalAlignment="Center" Margin="0,3,0,0"/>
@@ -149,12 +169,24 @@
                         <StackPanel Grid.Column="1" HorizontalAlignment="Center">
                             <Image x:Name="CaseImage" Width="70" Height="60"/>
                             <TextBlock x:Name="CaseBatteryText" Text="--%" FontSize="18" FontWeight="Bold" 
-                                       Foreground="#34C759" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+                                       Foreground="#8E8E93" HorizontalAlignment="Center" Margin="0,10,0,0"/>
                             <TextBlock Text="Кейс" FontSize="11" Foreground="#8E8E93" 
                                        HorizontalAlignment="Center" Margin="0,3,0,0"/>
                         </StackPanel>
                     </Grid>
                 </Border>
+
+                <!-- Battery Refresh Button -->
+                <Button x:Name="BtnRefreshBattery" Height="45" Margin="0,0,0,12" Click="CheckBattery_Click" BorderThickness="0">
+                    <Button.Template>
+                        <ControlTemplate TargetType="{x:Type Button}">
+                            <Border Background="#5856D6" CornerRadius="14">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <TextBlock Text="Обновить заряд" FontSize="15" FontWeight="SemiBold" Foreground="White"/>
+                </Button>
 
                 <!-- Connect Button -->
                 <Button x:Name="BtnConnect" Height="50" Margin="0,0,0,12" Click="Connect_Click" BorderThickness="0">
@@ -163,15 +195,14 @@
                             <Border Background="#34C759" CornerRadius="14">
                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                        </ControlTemplate>        
+                        </ControlTemplate>
                     </Button.Template>
                     <TextBlock Text="Подключиться" FontSize="15" FontWeight="SemiBold" Foreground="White"/>
-                </Button> 
+                </Button>
 
                 <!-- Status -->
                 <TextBlock x:Name="StatusText" Text="Нажмите «Подключиться»" FontSize="13" 
-                           Foreground="#8E8E93" HorizontalAlignment="Center"
-                           TextWrapping="Wrap" TextAlignment="Center"/>
+                           Foreground="#8E8E93" HorizontalAlignment="Center" Margin="0,5,0,0"/>
             </StackPanel>
         </Grid>
     </Grid>

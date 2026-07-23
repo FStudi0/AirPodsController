@@ -16,8 +16,10 @@
 	  <None Remove="Resources\airpods_earbuds.png" />
 	  <None Remove="Resources\airpods_logo.png" />
 	  <None Remove="Resources\icon_about.png" />
+	  <None Remove="Resources\icon_adaptive.png" />
 	  <None Remove="Resources\icon_anc.png" />
 	  <None Remove="Resources\icon_notifications.png" />
+	  <None Remove="Resources\icon_off.png" />
 	  <None Remove="Resources\icon_settings.png" />
 	  <None Remove="Resources\icon_transparency.png" />
 	  <None Remove="Resources\logo.ico" />
@@ -25,6 +27,12 @@
 
 	<ItemGroup>
 		<Content Include="logo.ico" />
+		<Resource Include="Resources\icon_adaptive.png">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Resource>
+		<Resource Include="Resources\icon_off.png">
+		  <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+		</Resource>
 		<Resource Include="Resources\logo.ico" />
 	</ItemGroup>
 
