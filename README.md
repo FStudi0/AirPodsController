@@ -6,7 +6,7 @@
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)
 ![.NET](https://img.shields.io/badge/.NET-8-purple)
 
-<img src="https://github.com/user-attachments/assets/a9d5915b-c2c1-4471-8bb5-d8cd68336780" width="50%">
+<img src="https://github.com/user-attachments/assets/0b89cfd4-348f-4ece-b995-cc4973de3bad" width="50%">
 
 ## ✨ Возможности
 
